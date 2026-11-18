@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.bitwisemadness.railwaysunbound.mixin.railwaysuntold",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "TrackPlacementInitializerMixin"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
