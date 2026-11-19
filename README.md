@@ -18,9 +18,10 @@ inert.
   pipeline, so existing networks are never edited retroactively.
 - **Station reach** for village targeting. Railways Untold only confirms a
   village it can pass its own gates for: a 25 degree angular claim cap, one
-  structure set per layout prediction, a 100 block spawn exclusion, and two
-  hardcoded search radii. This addon opens all four so stations can generate
-  at every village, including the modded ones its default tag never lists.
+  structure set per layout prediction, two separate 100 block spawn
+  exclusions, and two hardcoded search radii. This addon opens all of them
+  so stations can generate at every village, including the modded ones its
+  default tag never lists.
 - Everything reads the live server config and applies on `/reload`, with no
   restart.
 
@@ -29,8 +30,8 @@ Railways Untold's own config already covers generation frequency and spacing
 this addon does not duplicate those settings. The "hidden constants" its
 community sometimes cites (`BRANCH_CHANCE` and friends) are dead code in 1.2.2,
 verified against the shipped jar; exposing them would do nothing. The three
-constants `[villages]` does expose are the opposite: live, hardcoded, and read
-on every village attempt.
+settings `[villages]` exposes are the opposite: they replace constants that
+are live, hardcoded, and read on every village attempt.
 
 ## Configuration
 
@@ -69,7 +70,7 @@ loaded chunks, so nothing places inside a blocked biome either way.
 | `angularClaimCap` | `false` | `false` lets villages be targeted from any bearing. `true` restores Railways Untold's 25 degree claim cap. |
 | `validateAllStructureSets` | `true` | `true` predicts layouts from every structure set the village tag resolves to, so mixed-set packs confirm all their villages. `false` pins prediction to the first set, upstream's behavior. |
 | `extraStructureTags` | `["railways_unbound:villages"]` | Extra structure tags merged into Railways Untold's village targets. Tags only, never bare ids; a leading `#` is accepted and stripped. |
-| `minDistanceFromSpawn` | `0` | Blocks a village must be from world spawn to be targeted. `0` disables the gate; `100` is upstream. A rejected village is remembered forever, so this gate is permanent. |
+| `minDistanceFromSpawn` | `0` | Blocks a village must be from world spawn to be targeted. `0` disables the gate; `100` is upstream. Applied at both spawn checks - the one in `tryAssignVillage`, whose rejection is written to the network's permanent record, and the fallback search in `VillageLocator`, which skips quietly per search. |
 | `searchRadius` | `1000` | Block radius of the fallback search for an unassigned village. Railways Untold's own value, exposed. |
 | `forwardSearchLimit` | `4000` | Block limit on the forward search for a village the head is already heading toward. Railways Untold's own value, exposed. |
 

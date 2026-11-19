@@ -24,8 +24,9 @@ config = "${mod_id}.mixins.json"
 
 # Railways Untold interop: the login-bootstrap gate plus the worldgen mixins
 # that make stations reachable at every village (angular claim cap, layout
-# prediction, structure tags, search gates). All five are server-side logic
-# behind requiredMods, so the target classes always exist when they apply.
+# prediction, structure tags, search radius, both spawn gates). All six are
+# server-side logic behind requiredMods, so the target classes always exist
+# when they apply.
 [[mixins]]
 config = "${mod_id}.railwaysuntold.mixins.json"
 requiredMods = ["railwaysuntold"]

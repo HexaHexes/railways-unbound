@@ -74,7 +74,12 @@ verified with `javap -p` to be declared on the target class itself.
   (instance; the full descriptor is required, the class also declares
   `isAngleTooClose(DLjava/util/UUID;DDZ)Z`).
 - Shape: `@Inject` at `HEAD`, `cancellable = true`; returns `false` when
-  `angularClaimCap = false`.
+  `angularClaimCap = false`. The handler declares only the
+  `CallbackInfoReturnable` - no `angle`/`headId`/`threshold` parameters -
+  because Mixin's `Callback.checkDescriptor` accepts that "simple" descriptor
+  and sets `captureArgs = false`, so the target arguments are never loaded.
+  Declaring them just to ignore them would only earn a CodeQL
+  `Useless parameter` finding.
 - Why the 3-arg overload: the 5-arg overload only picks one of its two
   thresholds from the flag and delegates here, so every claim check in the
   jar funnels through this one method - the layout filter, the branch-claim
@@ -121,6 +126,26 @@ verified with `javap -p` to be declared on the target class itself.
 - The `4000` inside `logSyntheticFrontierOnce` is a different method and is
   deliberately untouched.
 
+### `VillageLocatorMixin`
+
+- Target: `...worldgen.village.VillageLocator.findNearestUnassignedVillage(...)L...VillageInfo;`
+  (public static, **five overloads**, so the selector carries the full
+  descriptor and names only the six-argument one - the one with the
+  `Predicate`). Verified to resolve to exactly 1 of the 5 overloads.
+- Shape: a single `@ModifyConstant`, `intValue = 100`; the only int `100`
+  in that method (the other constant is `Integer.MAX_VALUE`). The handler is
+  `private static` because the target is static.
+- Why a second spawn gate exists: `tryAssignVillage`'s gate writes a
+  permanent `TOO_CLOSE_TO_SPAWN` attempt to the network record, but this one
+  is a bare `if (distManhattan < 100) continue` inside the fallback search
+  loop - it skips the village for that search only. Leaving it at `100`
+  while `minDistanceFromSpawn = 0` would keep silently dropping villages
+  near spawn on every fallback, and the config would look broken.
+- The five-argument overload is a pure delegate (it passes a `null`
+  predicate), so patching the six-argument method covers both entry points.
+- The `Objects.requireNonNull(config)` just above the constant reads the
+  config and discards it; the distance is the inline `bipush 100`.
+
 ## Village targeting gates
 
 What `[villages]` opens, in the order `tryAssignVillage` applies them:
@@ -137,11 +162,16 @@ What `[villages]` opens, in the order `tryAssignVillage` applies them:
    4000, ...)` - the radius and the limit are inline `sipush` constants.
 3. **Unassigned fallback.** `findNearestUnassignedVillage(level, pos, 1000,
    ...)` - the same `sipush 1000`.
-4. **Spawn distance.** `horizontalDistance < 100.0` calls
+4. **Spawn distance.** Two sites, both now on `minDistanceFromSpawn`.
+   In `tryAssignVillage`, `horizontalDistance < 100.0` calls
    `markVillageAttempted(TOO_CLOSE_TO_SPAWN)` and returns `false`. The
    attempt is written to the network's persistent record, so a village
    rejected once is rejected forever - the reason `[villages]` defaults this
-   gate off rather than merely widening it.
+   gate off rather than merely widening it. In
+   `VillageLocator.findNearestUnassignedVillage`, `distManhattan < 100`
+   merely `continue`s the fallback loop; it is not recorded, but it would
+   still hide villages near spawn on every search, so
+   `VillageLocatorMixin` replaces it too.
 5. **Layout confirmation.** `VillagePredictor.confirmPrediction` →
    `VillageLayoutPredictor.predict` → `computeLayout`, which pins to
    `StructureTagResolver.resolve(level).get(0)`. Every village in any other
@@ -166,9 +196,19 @@ exposes. This addon deliberately does not duplicate those settings.
 
 `VILLAGE_SEARCH_RADIUS` and `VILLAGE_MIN_DISTANCE_FROM_SPAWN` deserve their
 own line: the fields are dead, but the numbers they name are live - `1000`,
-`4000` and `100.0` are inline constants inside `tryAssignVillage`, and those
-are what `[villages]` replaces. Exposing the fields would do nothing;
-replacing the constants is the only route.
+`4000` and `100.0` are inline constants inside `tryAssignVillage`, `100` is
+an inline constant inside `VillageLocator.findNearestUnassignedVillage`,
+and those are what `[villages]` replaces. Exposing the fields would do
+nothing; replacing the constants is the only route.
+
+Known gap, deliberately not closed here: `searchAndAssignVillageImpl` and
+`tryAssignFromPlannerEdges` - the retarget-while-exploring path - carry
+their own inline `sipush 1000` (and `sipush 4000`) as the radius they pass
+to `findNearestForwardVillageExpanding` and
+`findNearestUnassignedVillage`. `searchRadius` and `forwardSearchLimit`
+therefore govern the primary path a new head takes, not a head that
+retargets mid-explore. Both default to upstream's own numbers, so the gap
+is invisible unless the radii are raised.
 
 ## Behavior notes
 
@@ -179,7 +219,10 @@ replacing the constants is the only route.
   edits track that already exists.
 - The GameTest run stages the pinned jar through `gametestMods`, so mixin
   application is exercised against the real class in CI - for every target
-  class that actually loads. `VillageLayoutPredictor` and
-  `VillageHeadAssigner` are never loaded in a GameTest run, so a bad
-  injector in those two is caught only by loading the real pack and grepping
+  class that actually loads. It reports
+  `[TRACK-BACKEND] No supported rail mod found - track generation is
+  disabled`, so no expansion head ever runs and none of the village
+  targeting classes (`VillageLayoutPredictor`, `VillageHeadAssigner`,
+  `VillageAssignmentTracker`, `VillageLocator`) load there. A bad injector
+  in any of the four is caught only by loading the real pack and grepping
   `logs/latest.log` for `Failed to apply mixin`.

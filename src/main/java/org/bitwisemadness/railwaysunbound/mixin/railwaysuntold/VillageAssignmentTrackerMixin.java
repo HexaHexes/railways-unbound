@@ -1,7 +1,6 @@
 package org.bitwisemadness.railwaysunbound.mixin.railwaysuntold;
 
 import com.vodmordia.railwaysuntold.worldgen.village.VillageAssignmentTracker;
-import java.util.UUID;
 import org.bitwisemadness.railwaysunbound.config.RailwaysUnboundConfigs;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -25,13 +24,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * <p>Injected at HEAD with a cancel; gated by {@code requiredMods} in
  * {@code railways_unbound.railwaysuntold.mixins.json}.</p>
+ *
+ * <p>The handler deliberately declares only the {@link CallbackInfoReturnable}:
+ * Mixin's {@code Callback.checkDescriptor} accepts the "simple" callback
+ * descriptor (no target arguments) and then skips loading them, so the unused
+ * {@code angle}/{@code headId}/{@code threshold} parameters are omitted rather
+ * than declared and ignored.</p>
  */
 @Mixin(VillageAssignmentTracker.class)
 public abstract class VillageAssignmentTrackerMixin {
 
     @Inject(method = "isAngleTooClose(DLjava/util/UUID;D)Z", at = @At("HEAD"), cancellable = true)
-    private void railwaysUnbound$dropClaimCap(double angle, UUID headId, double threshold,
-            CallbackInfoReturnable<Boolean> callback) {
+    private void railwaysUnbound$dropClaimCap(CallbackInfoReturnable<Boolean> callback) {
         if (RailwaysUnboundConfigs.isLoaded() && !RailwaysUnboundConfigs.angularClaimCap()) {
             callback.setReturnValue(false);
         }
