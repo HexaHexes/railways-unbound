@@ -1,0 +1,23 @@
+{
+  "replace": false,
+  "values": [
+    { "id": "tensura:villages/dwarf_village", "required": false },
+    { "id": "tensura:villages/goblin_village/acacia", "required": false },
+    { "id": "tensura:villages/goblin_village/birch", "required": false },
+    { "id": "tensura:villages/goblin_village/jungle", "required": false },
+    { "id": "tensura:villages/goblin_village/oak", "required": false },
+    { "id": "tensura:villages/goblin_village/palm", "required": false },
+    { "id": "tensura:villages/goblin_village/spruce", "required": false },
+    { "id": "tensura:villages/lizardmen_village/tower_short", "required": false },
+    { "id": "tensura:villages/lizardmen_village/tower_tall", "required": false },
+    { "id": "tensura:villages/lizardmen_village/underground", "required": false },
+    { "id": "tensura:villages/lizardmen_village/water", "required": false },
+    { "id": "tensura:villages/orc_village", "required": false },
+    { "id": "mmv:village_swamp", "required": false },
+    { "id": "mmv:village_jungle", "required": false },
+    { "id": "mmv:village_dark_forest", "required": false },
+    { "id": "terralith:fortified_village", "required": false },
+    { "id": "terralith:fortified_desert_village", "required": false },
+    { "id": "iceandfire:pixie_village", "required": false }
+  ]
+}

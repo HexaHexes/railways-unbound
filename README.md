@@ -1,9 +1,10 @@
 # Railways Unbound
 
 Worldgen tuning for [Railways Untold](https://modrinth.com/mod/railways-untold): control which
-dimensions its procedurally generated train tracks appear in and which biomes
-they route around, through a synced server config. Without Railways Untold
-installed, every option stays inert.
+dimensions its procedurally generated train tracks appear in, which biomes
+they route around, and which villages they can reach for a station, through a
+synced server config. Without Railways Untold installed, every option stays
+inert.
 
 ## What it does
 
@@ -15,6 +16,12 @@ installed, every option stays inert.
   itself. Blacklist biomes or biome tags the tracks must route around, or
   whitelist the only ones they may cross. Heads re-route at the placement
   pipeline, so existing networks are never edited retroactively.
+- **Station reach** for village targeting. Railways Untold only confirms a
+  village it can pass its own gates for: a 25 degree angular claim cap, one
+  structure set per layout prediction, two separate 100 block spawn
+  exclusions, and two hardcoded search radii. This addon opens all of them
+  so stations can generate at every village, including the modded ones its
+  default tag never lists.
 - Everything reads the live server config and applies on `/reload`, with no
   restart.
 
@@ -22,7 +29,9 @@ Railways Untold's own config already covers generation frequency and spacing
 (`maxActiveHeads`, `minBranchSpacing`, `maxBranchDepth`, `eventChance`), so
 this addon does not duplicate those settings. The "hidden constants" its
 community sometimes cites (`BRANCH_CHANCE` and friends) are dead code in 1.2.2,
-verified against the shipped jar; exposing them would do nothing.
+verified against the shipped jar; exposing them would do nothing. The three
+settings `[villages]` exposes are the opposite: they replace constants that
+are live, hardcoded, and read on every village attempt.
 
 ## Configuration
 
@@ -54,6 +63,48 @@ chunk column, so cave biomes gate tunnels and surface biomes gate open track.
 Only loaded chunks are scanned, and the placement-time check always sees
 loaded chunks, so nothing places inside a blocked biome either way.
 
+### [villages]
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `angularClaimCap` | `false` | `false` lets villages be targeted from any bearing. `true` restores Railways Untold's 25 degree claim cap. |
+| `validateAllStructureSets` | `true` | `true` predicts layouts from every structure set the village tag resolves to, so mixed-set packs confirm all their villages. `false` pins prediction to the first set, upstream's behavior. |
+| `extraStructureTags` | `["railways_unbound:villages"]` | Extra structure tags merged into Railways Untold's village targets. Tags only, never bare ids; a leading `#` is accepted and stripped. |
+| `minDistanceFromSpawn` | `0` | Blocks a village must be from world spawn to be targeted. `0` disables the gate; `100` is upstream. Applied at both spawn checks - the one in `tryAssignVillage`, whose rejection is written to the network's permanent record, and the fallback search in `VillageLocator`, which skips quietly per search. |
+| `searchRadius` | `1000` | Block radius of the fallback search for an unassigned village. Railways Untold's own value, exposed. |
+| `forwardSearchLimit` | `4000` | Block limit on the forward search for a village the head is already heading toward. Railways Untold's own value, exposed. |
+
+`angularClaimCap`, `validateAllStructureSets` and `minDistanceFromSpawn` are
+read live. `extraStructureTags` is read when Railways Untold rebuilds its
+structure settings, so it takes effect on world load or `/reload`.
+
+The shipped `railways_unbound:villages` tag lists the 18 village structures
+Railways Untold's default `#minecraft:village` misses in a modded pack:
+Tensura's dwarf, goblin, lizardmen and orc villages, More Meow Village's
+three, Terralith's two fortified villages, and Ice and Fire's pixie village.
+Tags are additive and structures a pack does not have are simply skipped, so
+a pack without those mods sees no change. Add your own with
+`extraStructureTags`.
+
+One side effect worth naming: with `angularClaimCap = false`, Railways
+Untold's branch-direction spread penalty (a +60 score for steering toward an
+already-claimed bearing) also stops applying, because it reads the same
+claim check. That is consistent - the steering exists only to respect the
+cap - but it does mean branches spread more freely.
+
+To keep every Railways Untold 1.2.2 gate exactly as shipped, use the
+upstream-equivalent preset:
+
+```toml
+[villages]
+    angularClaimCap = true
+    validateAllStructureSets = false
+    extraStructureTags = []
+    minDistanceFromSpawn = 100
+    searchRadius = 1000
+    forwardSearchLimit = 4000
+```
+
 ## Known limitations
 
 - Denying a dimension stops new bootstrap there. A world that already
@@ -84,7 +135,8 @@ the game.
 
 - Railways Untold by vodmordia: every gate in this addon goes through its
   public registries (avoidance zones, generator claims, dimension
-  extensions) plus one documented login-hook mixin.
+  extensions) plus the documented mixins in
+  [`docs/RAILWAYS-UNTOLD.md`](docs/RAILWAYS-UNTOLD.md).
 - Built on [NeoForge](https://neoforged.net/).
 
 This addon embeds no third-party assets, textures, models or code, and no

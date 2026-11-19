@@ -27,6 +27,12 @@ public final class RailwaysUnboundConfigs {
     private static final ModConfigSpec.EnumValue<BiomeFilter.Mode> BIOME_MODE;
     private static final ModConfigSpec.ConfigValue<List<? extends String>> BIOMES;
     private static final ModConfigSpec.IntValue BIOME_SCAN_RADIUS;
+    private static final ModConfigSpec.BooleanValue ANGULAR_CLAIM_CAP;
+    private static final ModConfigSpec.BooleanValue VALIDATE_ALL_STRUCTURE_SETS;
+    private static final ModConfigSpec.ConfigValue<List<? extends String>> EXTRA_STRUCTURE_TAGS;
+    private static final ModConfigSpec.IntValue MIN_DISTANCE_FROM_SPAWN;
+    private static final ModConfigSpec.IntValue SEARCH_RADIUS;
+    private static final ModConfigSpec.IntValue FORWARD_SEARCH_LIMIT;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -66,6 +72,41 @@ public final class RailwaysUnboundConfigs {
                 .comment("outside the ring still block once tracks reach them.")
                 .defineInRange("scanRadiusChunks", 4, 1, 16);
         builder.pop();
+        builder.push("villages");
+        ANGULAR_CLAIM_CAP = builder
+                .comment("false: villages may be targeted from any bearing, so stations")
+                .comment("can generate at every village. true: Railways Untold's own")
+                .comment("25 degree claim cap, unchanged.")
+                .define("angularClaimCap", false);
+        VALIDATE_ALL_STRUCTURE_SETS = builder
+                .comment("false: layout prediction pins to the first structure set the")
+                .comment("village tag resolves to, so only that set's villages confirm.")
+                .comment("true: prediction considers every structure set the tag")
+                .comment("resolves to, so mixed-set packs confirm all their villages.")
+                .define("validateAllStructureSets", true);
+        EXTRA_STRUCTURE_TAGS = builder
+                .comment("Extra structure tags merged into Railways Untold's village")
+                .comment("targets, e.g. 'railways_unbound:villages'. Tags only - a bare")
+                .comment("structure id is rejected. Takes effect on world load or")
+                .comment("/reload.")
+                .defineListAllowEmpty("extraStructureTags",
+                        List.of("railways_unbound:villages"), () -> "",
+                        RailwaysUnboundConfigs::validBiomeEntry);
+        MIN_DISTANCE_FROM_SPAWN = builder
+                .comment("Blocks a village must be from world spawn to be targeted.")
+                .comment("0 disables Railways Untold's permanent TOO_CLOSE_TO_SPAWN")
+                .comment("gate, which otherwise rejects the village forever.")
+                .defineInRange("minDistanceFromSpawn", 0, 0, 30000000);
+        SEARCH_RADIUS = builder
+                .comment("Block radius in which a head searches for an unassigned")
+                .comment("village. Railways Untold's own value, exposed.")
+                .defineInRange("searchRadius", 1000, 16, 30000000);
+        FORWARD_SEARCH_LIMIT = builder
+                .comment("Block limit on the forward search for a village the head")
+                .comment("is already heading toward. Railways Untold's own value,")
+                .comment("exposed.")
+                .defineInRange("forwardSearchLimit", 4000, 16, 30000000);
+        builder.pop();
         SPEC = builder.build();
     }
 
@@ -85,6 +126,56 @@ public final class RailwaysUnboundConfigs {
     /** The biome filter; read live per query, never cached. */
     public static BiomeFilter biomes() {
         return BiomeFilter.of(BIOME_MODE.get(), BIOMES.get(), BIOME_SCAN_RADIUS.get());
+    }
+
+    /**
+     * Whether the 25 degree angular claim cap applies. Read live per query;
+     * the hot village-assignment path reads this single boolean.
+     */
+    public static boolean angularClaimCap() {
+        return ANGULAR_CLAIM_CAP.get();
+    }
+
+    /**
+     * Whether layout prediction validates every structure set the village tag
+     * resolves to, rather than the first only.
+     */
+    public static boolean validateAllStructureSets() {
+        return VALIDATE_ALL_STRUCTURE_SETS.get();
+    }
+
+    /**
+     * Extra structure tags merged into Railways Untold's village targets.
+     * The leading {@code #} is stripped: Railways Untold parses bare ids only.
+     */
+    public static List<String> extraStructureTags() {
+        return EXTRA_STRUCTURE_TAGS.get().stream()
+                .map(tag -> tag.startsWith("#") ? tag.substring(1) : tag)
+                .toList();
+    }
+
+    /** Blocks a village must be from world spawn to be targeted. */
+    public static int minDistanceFromSpawn() {
+        return MIN_DISTANCE_FROM_SPAWN.get();
+    }
+
+    /** Block radius in which a head searches for an unassigned village. */
+    public static int searchRadius() {
+        return SEARCH_RADIUS.get();
+    }
+
+    /** Block limit on the forward search for a village ahead of the head. */
+    public static int forwardSearchLimit() {
+        return FORWARD_SEARCH_LIMIT.get();
+    }
+
+    /**
+     * Whether the SERVER spec has been loaded yet. Mixins that run before the
+     * config exists (a client resource pass, an early worldgen read) must skip
+     * rather than trip over an unloaded value.
+     */
+    public static boolean isLoaded() {
+        return SPEC.isLoaded();
     }
 
     /**
