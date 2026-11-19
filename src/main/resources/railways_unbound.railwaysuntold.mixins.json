@@ -4,7 +4,11 @@
   "package": "org.bitwisemadness.railwaysunbound.mixin.railwaysuntold",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "TrackPlacementInitializerMixin"
+    "BiomeSettingsLoaderMixin",
+    "TrackPlacementInitializerMixin",
+    "VillageAssignmentTrackerMixin",
+    "VillageHeadAssignerMixin",
+    "VillageLayoutPredictorMixin"
   ],
   "client": [],
   "server": [],
