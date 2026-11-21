@@ -50,7 +50,7 @@ next section.
 
 ## Mixins
 
-All five live in `org.bitwisemadness.railwaysunbound.mixin.railwaysuntold`,
+All eight live in `org.bitwisemadness.railwaysunbound.mixin.railwaysuntold`,
 are registered in `railways_unbound.railwaysuntold.mixins.json` with
 `defaultRequire: 1` and no refmap, and are gated by
 `requiredMods = ["railwaysuntold"]` in
@@ -105,7 +105,7 @@ verified with `javap -p` to be declared on the target class itself.
 - Target: `...datapack.BiomeSettingsLoader.buildStructureSettings()Lcom/vodmordia/railwaysuntold/datapack/BiomeSettingsLoader$StructureSettings;`
   (private, unique name).
 - Shape: `@Inject` at `RETURN`, `cancellable = true`; rebuilds the record
-  with `extraStructureTags` appended to `targetTags`, reusing the original
+  with `targetStructureTags` appended to `targetTags`, reusing the original
   `avoidanceBlacklist` and `undergroundList` lists by reference.
 - Why here and not `resolveStructureSettings`: that method returns
   `cachedStructureSettings`, and `StructureAvoidanceFilter.isBlacklisted`
@@ -146,9 +146,93 @@ verified with `javap -p` to be declared on the target class itself.
 - The `Objects.requireNonNull(config)` just above the constant reads the
   config and discards it; the distance is the inline `bipush 100`.
 
-## Village targeting gates
+### `CoarseRouteFactoryMixin`
 
-What `[villages]` opens, in the order `tryAssignVillage` applies them:
+- Target: `...worldgen.planner.noise.CoarseRouteFactory` - four redirects,
+  each selector verified unique with `javap -p`:
+  - `createAndAttachInternal` (private static, single declaration),
+    `@Redirect` on `RailwaysUntoldConfig.isAllAvoidanceEnabled()` (the defer
+    gate at bytecode offset 667) and on `ScanResult.predictions()` at
+    `ordinal = 1` (the defer-overflow commit).
+  - `lambda$createAndAttachInternal$9` (private static, single
+    declaration), `@Redirect` on `RailwaysUntoldConfig.isAllAvoidanceEnabled()`
+    (the route-validation gate at offset 16).
+  - `validateRouteAgainstStructures` (private static, single declaration),
+    `@Redirect` on `ScanResult.predictions()` at `ordinal = 0` (the fresh
+    corridor scan seeded into validation).
+- Shape: all four handlers are `private static` (the targets are static) and
+  re-enter the original call from the handler body - a different call site,
+  so the redirect never re-triggers itself. No `@Shadow`, no copied control
+  flow. Config reads are behind `RailwaysUnboundConfigs.isLoaded()` so an
+  unloaded SERVER spec falls back to upstream behavior.
+- Why: Railways Untold has three routes to laying rail through a structure
+  even with `allAvoidance = true`, all closed here behind
+  `alwaysAvoidStructures` (see the structure avoidance section below). The
+  `predictions()` redirects append one conservative `PredictedStructure` per
+  remaining `DeferredCandidate` (set-name based, chunk center at Y=64, no
+  footprint so `getStructureRadius` falls back to 48 or the surveyed layout),
+  so both planning and `validateRouteAgainstStructures` see structures the
+  defer overflow used to drop. Duplicates collapse through the existing
+  `structureKey` (chunk + set name) and `mergeStructuresDedupByChunk`.
+- Deliberately untouched: the recheck-carry `predictions()` read
+  (`ordinal = 0` in `createAndAttachInternal`) and
+  `AvoidanceConstraintService.apply` - terrain steering stays under
+  Railways Untold's own `allAvoidance`.
+
+### `StructureAvoidanceFilterMixin`
+
+- Target: `...config.StructureAvoidanceFilter.isBlacklisted(Ljava/lang/String;)Z`
+  (static, single declaration - the only consumer of the datapack's
+  `structure_avoidance_blacklist`).
+- Shape: `@Inject` at `HEAD`, `cancellable = true`; returns `false` when
+  `alwaysAvoidStructures` is on. The handler declares only the
+  `CallbackInfoReturnable` - no `structureId` parameter - for the same
+  `checkDescriptor`/`captureArgs = false` reason as
+  `VillageAssignmentTrackerMixin`, and to avoid a CodeQL `Useless parameter`
+  finding.
+- Why: the blacklist means "exempt from avoidance" (default `["wythers:"]`),
+  and `tryPredictStructure` early-returns on it, dropping the structure from
+  the obstacle set entirely. With the flag on, no structure is exempt on that
+  route; the cache fields are never consulted because the handler cancels
+  before them.
+
+## Structure avoidance
+
+Railways Untold's `allAvoidance` (default `true`) is meant to keep rails off
+structures, but 1.2.2 has four holes. `alwaysAvoidStructures` (default
+`true`) closes the first three; the fourth is deliberately kept:
+
+1. **Defer overflow.** Candidates whose chunks have not generated yet are
+   deferred (`[ROUTE-DEFER]`, up to six cycles of 5t) while prewarm runs.
+   On the seventh cycle the route commits with `ScanResult.predictions()`
+   only - the still-unverified candidates are dropped from the obstacle
+   list, so neither planning nor `validateRouteAgainstStructures` ever sees
+   them (the pack this was measured in logged 2777 defer events). Fixed by
+   the two `predictions()` redirects in `CoarseRouteFactoryMixin`.
+2. **The `allAvoidance` master gate.** With it off, route validation and
+   deferring are both skipped entirely. The two `isAllAvoidanceEnabled()`
+   redirects force the structure gates on regardless. Terrain avoidance and
+   steering are *not* forced - that is `AvoidanceConstraintService`, left
+   alone.
+3. **The avoidance blacklist.** `structure_avoidance_blacklist` exempts
+   named structures; neutralized by `StructureAvoidanceFilterMixin`.
+4. **Underground/buried exemptions.** `structure_underground_list`
+   (upstream: ocean ruins, shipwrecks) and fully buried structures are still
+   never obstacles - rails may pass over or through them. Kept on purpose:
+   detouring around every submerged or buried blob would be absurd.
+
+Already-correct upstream behavior, left as is: the lostcity passthrough
+exemptions, the 200 block obstacle removal around the target center (the
+station approach), the `target_village_skirt`, and the two-replan-then-
+`STRUCTURE_CONFLICT` rejection cap.
+
+`alwaysAvoidStructures` is read live per query and applies to the next
+planned route; set it `false` to hand structure avoidance entirely back to
+Railways Untold's `allAvoidance`.
+
+## Structure targeting gates
+
+What `[structures]` opens, in the order `tryAssignVillage` applies them:
 
 1. **Angular claim cap.** `VillageHeadAssigner.lambda$buildAngularFilter$1`
    calls `RailNetwork.isClaimAngleTooClose(angle, headId, 25.0)`, which ends
@@ -166,7 +250,7 @@ What `[villages]` opens, in the order `tryAssignVillage` applies them:
    In `tryAssignVillage`, `horizontalDistance < 100.0` calls
    `markVillageAttempted(TOO_CLOSE_TO_SPAWN)` and returns `false`. The
    attempt is written to the network's persistent record, so a village
-   rejected once is rejected forever - the reason `[villages]` defaults this
+   rejected once is rejected forever - the reason `[structures]` defaults this
    gate off rather than merely widening it. In
    `VillageLocator.findNearestUnassignedVillage`, `distManhattan < 100`
    merely `continue`s the fallback loop; it is not recorded, but it would
@@ -180,7 +264,21 @@ What `[villages]` opens, in the order `tryAssignVillage` applies them:
 `StructureTagResolver.resolve` caches per `ServerLevel` and 1.2.2 has no
 caller of its `clearCache()`, so the resolved target list is fixed on first
 use per level - the structure tags must be right by then, which is why
-`extraStructureTags` reads at datapack-reload time rather than per query.
+`targetStructureTags` reads at datapack-reload time rather than per query.
+
+The targeting pipeline itself is structure-agnostic end to end: the resolved
+tags flow through `StructureTagResolver` to the locator (`Holder.is`),
+`computeLayout` re-runs vanilla `Structure.generate` at the chunk and tries
+every entry of the set until one produces a valid start, `readPlacedLayout`
+gates on `matchesTargetTags` and reads real `StructureStart` pieces, and the
+footprint, station-plan and station-build stages are all driven by layout
+bounds rather than by anything village-specific. The hardcoded
+`["minecraft:villages", "minecraft:village"]` label inside
+`RouteObstacleScanner.scanStructures` is only a label on the resulting
+predictions (it also sets `isVillage`, which *enables* the surveyed-footprint
+enrichment for any target). So any structure tag listed in
+`targetStructureTags` works without further code - the gates above are the
+only thing standing between a pack and a station at, say, an ocean monument.
 
 ## Dead code (never build on it)
 
@@ -198,7 +296,7 @@ exposes. This addon deliberately does not duplicate those settings.
 own line: the fields are dead, but the numbers they name are live - `1000`,
 `4000` and `100.0` are inline constants inside `tryAssignVillage`, `100` is
 an inline constant inside `VillageLocator.findNearestUnassignedVillage`,
-and those are what `[villages]` replaces. Exposing the fields would do
+and those are what `[structures]` replaces. Exposing the fields would do
 nothing; replacing the constants is the only route.
 
 Known gap, deliberately not closed here: `searchAndAssignVillageImpl` and
@@ -222,7 +320,8 @@ is invisible unless the radii are raised.
   class that actually loads. It reports
   `[TRACK-BACKEND] No supported rail mod found - track generation is
   disabled`, so no expansion head ever runs and none of the village
-  targeting classes (`VillageLayoutPredictor`, `VillageHeadAssigner`,
-  `VillageAssignmentTracker`, `VillageLocator`) load there. A bad injector
-  in any of the four is caught only by loading the real pack and grepping
-  `logs/latest.log` for `Failed to apply mixin`.
+  targeting or route-planning classes (`VillageLayoutPredictor`,
+  `VillageHeadAssigner`, `VillageAssignmentTracker`, `VillageLocator`,
+  `CoarseRouteFactory`, `StructureAvoidanceFilter`) load there. A bad
+  injector in any of them is caught only by loading the real pack and
+  grepping `logs/latest.log` for `Failed to apply mixin`.
